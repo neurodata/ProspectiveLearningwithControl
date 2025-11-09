@@ -1,5 +1,8 @@
 # Prospective Learning with Control
 
 ## Overview
-This library presents multiple agents learning on a foraging task.
+This repository contains the code to reproduce experiments and figues in the paper "Optimal Control of the future via Prospective Foraging"
 
+## Dependencies
+To sertup the conda environment, run
+conda env create -f environment.yml
