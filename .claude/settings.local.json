@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(python3:*)",
+      "Bash(ls:*)",
+      "Bash(/opt/homebrew/bin/python3.10:*)",
+      "Bash(wc:*)",
+      "Bash(python -c:*)"
+    ]
+  }
+}

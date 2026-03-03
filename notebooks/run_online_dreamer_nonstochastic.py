@@ -8,7 +8,7 @@ from joblib import Parallel, delayed
 
 from src.utils import reward_simulate, simulate_data_raw
 from src.utils import path_opt, compute_normalized_future_rewards
-from src.sac import SACLearner
+from src.dreamer import DreamerV3Learner
 
 from collections import deque
 import random
@@ -17,7 +17,7 @@ from tqdm import tqdm
 base_reward = 10.0
 map_name = "short"
 decay_rate = 0.6
-reward_period = 10 
+reward_period = 10
 session_duration = 500000
 rewards_in_period = []
 
@@ -40,7 +40,7 @@ class ForagingEnv:
         self.current_step = 0
         self.state = 1  # Start at state 1
         return self.state
-    
+
     def get_next_state(self, action):
         action = self.action_space[action]  # map action index to actual action
         next_state = self.state + action
@@ -51,7 +51,6 @@ class ForagingEnv:
         return next_state
 
     def step(self, action):
-        # Action: -1 (left), 0 (stay), +1 (right)
         reward = reward_simulate(self.state, self.current_step, self.rewards_in_period)
         next_state = self.get_next_state(action)
         self.state = next_state
@@ -63,7 +62,7 @@ class ForagingEnv:
 
     def get_time(self):
         return self.current_step
-    
+
 def get_next_state(current_state, action):
     action = [-1, 0, 1][action]  # map action index to actual action
     next_state = current_state + action
@@ -73,13 +72,14 @@ def get_next_state(current_state, action):
         next_state = 6
     return next_state
 
-def evaluate(learner, current_state, t, eval_period=100, gamma=0.5, epsilon = 0.1):
+def evaluate(learner, current_state, t, eval_period=100, gamma=0.5, epsilon=0.1):
+    learner.reset_eval_state()
     pred_states = [current_state]
     for step in range(t, t+eval_period):
         if np.random.rand() < epsilon:
             action = np.random.choice([0,1,2])
         else:
-            action = learner.select_action(current_state, step, eval_mode = True)
+            action = learner.select_action(current_state, step, eval_mode=True)
         current_state = get_next_state(current_state, action)
         pred_states.append(current_state)
 
@@ -91,11 +91,11 @@ def evaluate(learner, current_state, t, eval_period=100, gamma=0.5, epsilon = 0.
     pregret = (np.sum(preward_opt_test).item() - np.sum(preward).item()) / eval_period
     return pregret
 
-def run_replicate(include_time=False):
+def run_replicate(include_time=True):
     env = ForagingEnv(rewards_in_period)
-    learner = SACLearner(include_time=include_time)
+    learner = DreamerV3Learner(include_time=include_time)
 
-    batch_size = 64
+    batch_size = 16
     eval_period = 100
     terminal_time = 100000
 
@@ -111,8 +111,10 @@ def run_replicate(include_time=False):
         if (t + 1) % eval_period == 0:
             pregret = evaluate(learner, state, t)
             pregret_list.append(pregret)
-            # print(f"Time {t+1}, Pregret: {pregret:.3f}")
             t_list.append(t+1)
+
+        # Encode observation for buffer
+        obs = learner.encode_obs(state, t).detach().numpy().flatten()
 
         # Select action
         action = learner.select_action(state, t)
@@ -121,9 +123,9 @@ def run_replicate(include_time=False):
         next_state, reward = env.step(action)
 
         # Store transition
-        learner.replay_buffer.push(state, action, t, reward, next_state)
+        learner.replay_buffer.push(obs, action, reward)
 
-        # Update SAC
+        # Update DreamerV3
         learner.update(batch_size)
 
     pregret_list = np.array(pregret_list)
@@ -132,16 +134,18 @@ def run_replicate(include_time=False):
 
 num_reps = 10
 
-results_notime = Parallel(n_jobs=10)(delayed(run_replicate)(include_time=False) for _ in range(num_reps))
 results_time = Parallel(n_jobs=10)(delayed(run_replicate)(include_time=True) for _ in range(num_reps))
-
-pregret_list_notime = []
-for pregret_list, t_list in results_notime:
-    pregret_list_notime.append(pregret_list)
+results_notime = Parallel(n_jobs=10)(delayed(run_replicate)(include_time=False) for _ in range(num_reps))
 
 pregret_list_time = []
 for pregret_list, t_list in results_time:
     pregret_list_time.append(pregret_list)
 
-np.savez("../results/RL/stochastic_online_pregrets_sac_seeds_2.npz", pregret_list_notime=pregret_list_notime, pregret_list_time=pregret_list_time, t_list=t_list)
+pregret_list_notime = []
+for pregret_list, t_list in results_notime:
+    pregret_list_notime.append(pregret_list)
 
+np.savez("../results/RL/online_pregrets_dreamer.npz",
+         pregret_list_time=pregret_list_time,
+         pregret_list_notime=pregret_list_notime,
+         t_list=t_list)

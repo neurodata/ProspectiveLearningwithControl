@@ -70,18 +70,21 @@ def get_next_state(current_state, action):
         next_state = 6
     return next_state
 
-def evaluate(learner, current_state, t, eval_period=100, gamma=0.5):
+def evaluate(learner, current_state, t, eval_period=100, gamma=0.5, epsilon = 0.1):
     pred_states = [current_state]
     for step in range(t, t+eval_period):
-        action = learner.greedy_policy(current_state, step)
+        if np.random.rand() < epsilon:
+            action = np.random.choice([-1, 0 ,1])
+        else:
+            action = learner.greedy_policy(current_state, step)
         current_state = get_next_state(current_state, action)
         pred_states.append(current_state)
 
     # evaluate
     irewards_test = [reward_simulate(pred_states[i], t+i, rewards_in_period) for i in np.arange(1, len(pred_states))]
-    preward = compute_normalized_future_rewards(irewards_test, eval_period, gamma)
+    preward = compute_normalized_future_rewards(irewards_test, eval_period, gamma, normalization=True)
     optimal_states, ireward_opt = path_opt(pred_states[0], t, eval_period)
-    preward_opt_test = compute_normalized_future_rewards(ireward_opt[1:], eval_period, gamma)
+    preward_opt_test = compute_normalized_future_rewards(ireward_opt[1:], eval_period, gamma, normalization=True)
     pregret = (np.sum(preward_opt_test).item() - np.sum(preward).item()) / eval_period
     return pregret
 
@@ -145,4 +148,4 @@ pregret_list_time = []
 for pregret_list, t_list in results_time:
     pregret_list_time.append(pregret_list)
 
-np.savez("results/RL/online_pregrets_fqi.npz", pregret_list_notime=pregret_list_notime, pregret_list_time=pregret_list_time, t_list=t_list)
+np.savez("../results/RL/stochastic_online_pregrets_fqi.npz", pregret_list_notime=pregret_list_notime, pregret_list_time=pregret_list_time, t_list=t_list)
